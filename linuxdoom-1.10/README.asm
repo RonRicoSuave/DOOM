@@ -1,4 +1,9 @@
 
+Note: 
+The below is a quick conversion to Intel syntax which clang should build without complaining, but I'm not testing this.  
+Unecessary instruction postfixes have been removed and provided as operand size directives where they cannot be 
+inferred by the compiler.  Some branch constructs were changed slightly for modern hardware with branch prediction.  Otherwise, things have been left as-is.  
+
 README - DOOM assembly code
 
 Okay, I add the DOS assembly module for the historically
@@ -14,18 +19,19 @@ had both texture mapping and fixed point functions. It
 contained implementations both for i386 and M68k. For
 brevity, I include only the i386 fixed point stuff below.
 
-//====================================================
-// tmap.S  as of January 10th, 1997
+;====================================================
+; tmap.S  as of January 10th, 1997
+; updated syntax, untested 2018
 
-//================
-//
-// R_DrawColumn
-//
-//================
+;================
+;
+; R_DrawColumn
+;
+;================
 
 	.data
-loopcount	.long	0
-pixelcount	.long	0
+loopcount	dd	0
+pixelcount	dd	0
 
 	.text
 
@@ -35,102 +41,105 @@ _R_DrawColumn:
 
 	pushad
 
-	movl		ebp,[_dc_yl]
-	movl		ebx,ebp
-	movl     edi,[_ylookup+ebx*4]
-	movl		ebx,[_dc_x]
-	addl     edi,[_columnofs + ebx*4]
+	mov		ebp, [_dc_yl]
+	mov		ebx, ebp
+	mov     edi, [_ylookup + ebx*4]
+	mov		ebx, [_dc_x]
+	add     edi, [_columnofs + ebx*4]
 
-	movl		eax,[_dc_yh]
-	incl		eax
-	subl     eax,ebp                   	// pixel count
-	movl		[pixelcount],eax			// save for final pixel
-	js		done						// nothing to scale
-	shrl		eax,1						// double pixel count
-	movl		[loopcount],eax
+	mov		eax,[_dc_yh]
+	inc		eax
+	sub     eax,ebp                   	; pixel count
+	mov		[pixelcount], eax			; save for final pixel
+	js		done						; nothing to scale
+	shr		eax, 1						; double pixel count (this halves it. bug or bad comment?)
+	mov		[loopcount], eax
 	
-	movl     ecx,[_dc_iscale]
+	mov     ecx, [_dc_iscale]
 
-	movl		eax,[_centery]
-	subl		eax,ebp
-	imull	ecx
-	movl		ebp,[_dc_texturemid]
-	subl		ebp,eax
-	shll		ebp,9							// 7 significant bits, 25 frac
+	mov		eax, [_centery]
+	sub		eax, ebp
+	imul	ecx
+	mov		ebp, [_dc_texturemid]
+	sub		ebp, eax
+	shl		ebp, 9						; 7 significant bits, 25 frac
 
-	movl     esi,[_dc_source]
+	mov     esi, [_dc_source]
 	
 
-	movl		ebx,[_dc_iscale]
-	shll		ebx,9
-	movl		eax,OFFSET patch1+2		// convice tasm to modify code...
-	movl		[eax],ebx
-	movl		eax,OFFSET patch2+2		// convice tasm to modify code...
-	movl		[eax],ebx
+	mov		ebx, [_dc_iscale]
+	shl		ebx, 9
+	mov		eax, OFFSET patch1+2		; convice tasm to modify code...
+	mov		[eax], ebx
+	mov		eax, OFFSET patch2+2		; convice tasm to modify code...
+	mov		[eax], ebx
 	
-// eax		aligned colormap
-// ebx		aligned colormap
-// ecx,edx	scratch
-// esi		virtual source
-// edi		moving destination pointer
-// ebp		frac
+; eax		aligned colormap
+; ebx		aligned colormap
+; ecx,edx	scratch
+; esi		virtual source
+; edi		moving destination pointer
+; ebp		frac
 	
-	movl	ecx,ebp					// begin calculating first pixel
-	addl	ebp,ebx					// advance frac pointer
-	shrl ecx,25					// finish calculation for first pixel
-	movl	edx,ebp					// begin calculating second pixel
-	addl	ebp,ebx					// advance frac pointer
-	shrl edx,25					// finish calculation for second pixel
-	movl eax,[_dc_colormap]
-	movl ebx,eax
-	movb	al,[esi+ecx]			// get first pixel
-	movb	bl,[esi+edx]			// get second pixel
-	movb	al,[eax]				// color translate first pixel
-	movb	bl,[ebx]				// color translate second pixel
+	mov	ecx, ebp					; begin calculating first pixel
+	add	ebp, ebx					; advance frac pointer
+	shr ecx, 25					; finish calculation for first pixel
+	mov	edx, ebp					; begin calculating second pixel
+	add	ebp, ebx					; advance frac pointer
+	shr edx, 25					; finish calculation for second pixel
+	mov eax, [_dc_colormap]
+	mov ebx, eax
+	mov	al, [esi+ecx]			; get first pixel
+	mov	bl, [esi+edx]			; get second pixel
+	mov	al, [eax]				; color translate first pixel
+	mov	bl, [ebx]				; color translate second pixel
 	
-	testl	[pixelcount],0fffffffeh
-	jnz	doubleloop				// at least two pixels to map
-	jmp	checklast
+	mov ecx, [pixelcount]
+	test ecx, 0fffffffeh		; changed to two instructions to avoid mem/imm test
+	jz checklast 
+	; this was a jnz / jmp pair.  switched to jz / fallthrough 
+	; because this branch will be predicted not taken on the first
+	; run so we might as well limit the mispredict to the last run	
 	
 	.align	16
 doubleloop:
-	movl	ecx,ebp					// begin calculating third pixel
+	mov	ecx, ebp				; begin calculating third pixel
 patch1:
-	addl	ebp,12345678h			// advance frac pointer
-	movb	[edi],al				// write first pixel
-	shrl ecx,25					// finish calculation for third pixel
-	movl	edx,ebp					// begin calculating fourth pixel
+	add	ebp, 12345678h			; advance frac pointer
+	mov	[edi], al				; write first pixel
+	shr ecx, 25					; finish calculation for third pixel
+	mov	edx, ebp				; begin calculating fourth pixel
 patch2:
-	addl	ebp,12345678h			// advance frac pointer
-	movl	[edi+SCREENWIDTH],bl	// write second pixel
-	shrl edx,25					// finish calculation for fourth pixel
-	movb	al,[esi+ecx]			// get third pixel
-	addl	edi,SCREENWIDTH*2		// advance to third pixel destination
-	movb	bl,[esi+edx]			// get fourth pixel
-	decl	[loopcount]				// done with loop?
-	movb	al,[eax]				// color translate third pixel
-	movb	bl,[ebx]				// color translate fourth pixel
+	add	ebp, 12345678h			; advance frac pointer
+	mov	[edi+SCREENWIDTH], bl	; write second pixel
+	shr edx, 25					; finish calculation for fourth pixel
+	mov	al, [esi+ecx]			; get third pixel
+	add	edi, SCREENWIDTH*2		; advance to third pixel destination
+	mov	bl, [esi+edx]			; get fourth pixel
+	dec	DWORD PTR [loopcount]	; done with loop?
+	mov	al, [eax]				; color translate third pixel
+	mov	bl, [ebx]				; color translate fourth pixel
 	jnz	doubleloop
 	
-// check for final pixel
+; check for final pixel
 checklast:
-	testl	[pixelcount],1
+	test DWORD PTR [pixelcount], 1
 	jz	done
-	movb	[edi],al				// write final pixel
+	mov	[edi], al				; write final pixel
 	
 done:
-	popad
+	popa
 	ret
 	
 
 
-//================
-//
-// R_DrawSpan
-//
-// Horizontal texture mapping
-//
-//================
+;================
+;
+; R_DrawSpan
+;
+; Horizontal texture mapping
+;
+;================
 
 
 	.align	16
@@ -138,118 +147,117 @@ done:
 _R_DrawSpan:
 	pushad
 
-//
-// find loop count
-//	
-	movl		eax,[_ds_x2]
-	incl		eax
-	subl     eax,[_ds_x1]               	// pixel count
-	movl		[pixelcount],eax			// save for final pixel
-	js		hdone						// nothing to scale
-	shrl		eax,1						// double pixel count
-	movl		[loopcount],eax
+;
+; find loop count
+;	
+	mov		eax, [_ds_x2]
+	inc		eax
+	sub     eax, [_ds_x1]              	; pixel count
+	mov		[pixelcount], eax			; save for final pixel
+	js		hdone						; nothing to scale
+	shr		eax, 1						; double pixel count (this halves it... bug or bad comment?)
+	mov		[loopcount], eax
 
-//
-// build composite position
-//
-	movl	ebp,[_ds_xfrac]
-	shll	ebp,10
-	andl	ebp,0ffff0000h
-	movl	eax,[_ds_yfrac]
-	shrl	eax,6
-	andl	eax,0ffffh
-	orl	ebp,eax
+; build composite position
+	mov	ebp, [_ds_xfrac]
+	shl	ebp, 10
+	and	ebp, 0ffff0000h
+	mov	eax, [_ds_yfrac]
+	shr	eax, 6
+	and	eax, 0ffffh
+	or	ebp, eax
 
-	movl	esi,[_ds_source]
+	mov	esi, [_ds_source]
 
-//
-// calculate screen dest
-//
-	movl	edi,[_ds_y]
-	movl	edi,[_ylookup+edi*4]
-	movl	eax,[_ds_x1]
-	addl edi,[_columnofs+eax*4]
+; calculate screen dest
+	mov	edi, [_ds_y]
+	mov	edi, [_ylookup + edi*4]
+	mov	eax, [_ds_x1]
+	add edi, [_columnofs + eax*4]
 
-//
-// build composite step
-//
-	movl	ebx,[_ds_xstep]
-	shll	ebx,10
-	andl	ebx,0ffff0000h
-	movl	eax,[_ds_ystep]
-	shrl	eax,6
-	andl	eax,0ffffh
-	orl	ebx,eax
+;
+; build composite step
+;
+	mov	ebx, [_ds_xstep]
+	shl	ebx, 10
+	and	ebx, 0ffff0000h
+	mov	eax, [_ds_ystep]
+	shr	eax, 6
+	and	eax, 0ffffh
+	or	ebx, eax
 
-	movl		eax,OFFSET hpatch1+2		// convice tasm to modify code...
-	movl		[eax],ebx
-	movl		eax,OFFSET hpatch2+2		// convice tasm to modify code...
-	movl		[eax],ebx
+	movl		eax, OFFSET hpatch1+2		; self-modifying code loc 1
+	movl		[eax], ebx
+	movl		eax, OFFSET hpatch2+2		; self-modifying code loc 2
+	movl		[eax], ebx
 	
-// eax		aligned colormap
-// ebx		aligned colormap
-// ecx,edx	scratch
-// esi		virtual source
-// edi		moving destination pointer
-// ebp		frac
+; eax		aligned colormap
+; ebx		aligned colormap
+; ecx,edx	scratch
+; esi		virtual source
+; edi		moving destination pointer
+; ebp		frac
 	
-	shldl ecx,ebp,22				// begin calculating third pixel (y units)
-	shldl ecx,ebp,6				// begin calculating third pixel (x units)
-	addl	ebp,ebx					// advance frac pointer
-	andl ecx,4095				// finish calculation for third pixel
-	shldl edx,ebp,22				// begin calculating fourth pixel (y units)
-	shldl edx,ebp,6				// begin calculating fourth pixel (x units)
-	addl	ebp,ebx					// advance frac pointer
-	andl edx,4095				// finish calculation for fourth pixel
-	movl eax,[_ds_colormap]
-	movl ebx,eax
-	movb	al,[esi+ecx]			// get first pixel
-	movb	bl,[esi+edx]			// get second pixel
-	movb	al,[eax]				// color translate first pixel
-	movb	bl,[ebx]				// color translate second pixel
+	shld ecx, ebp, 22			; begin calculating third pixel (y units)
+	shld ecx, ebp, 6			; begin calculating third pixel (x units)
+	add	ebp, ebx				; advance frac pointer
+	and ecx, 4095				; finish calculation for third pixel
+	shld edx, ebp, 22			; begin calculating fourth pixel (y units)
+	shld edx, ebp, 6			; begin calculating fourth pixel (x units)
+	add	ebp, ebx		 		; advance frac pointer
+	and edx, 4095				; finish calculation for fourth pixel
+	mov eax, [_ds_colormap]
+	mov ebx, eax
+	mov	al, [esi+ecx]			; get first pixel
+	mov	bl, [esi+edx]			; get second pixel
+	mov	al, [eax]				; color translate first pixel
+	mov	bl, [ebx]				; color translate second pixel
 	
-	testl	[pixelcount],0fffffffeh
-	jnz	hdoubleloop				// at least two pixels to map
-	jmp	hchecklast
+	test DWORD PTR [pixelcount], 0fffffffeh
+	jz	hchecklast				; at least two pixels to map
 	
-
+	; this was a jnz / jmp pair.  switched to jz / fallthrough 
+	; because this branch will be predicted not taken.  the jmp to 
+	; hchecklast would cause a speculative pre-fetch of that on 
+	; current hardware. 
+	
 	.align	16
 hdoubleloop:
-	shldl ecx,ebp,22				// begin calculating third pixel (y units)
-	shldl ecx,ebp,6				// begin calculating third pixel (x units)
+	shld ecx, ebp, 22			; begin calculating third pixel (y units)
+	shld ecx, ebp, 6			; begin calculating third pixel (x units)
 hpatch1:
-	addl	ebp,12345678h			// advance frac pointer
-	movb	[edi],al				// write first pixel
-	andl ecx,4095				// finish calculation for third pixel
-	shldl edx,ebp,22				// begin calculating fourth pixel (y units)
-	shldl edx,ebp,6				// begin calculating fourth pixel (x units)
+	add	ebp, 12345678h			; advance frac pointer
+	mov	[edi], al				; write first pixel
+	and ecx, 4095				; finish calculation for third pixel
+	shld edx, ebp, 22			; begin calculating fourth pixel (y units)
+	shld edx, ebp, 6			; begin calculating fourth pixel (x units)
 hpatch2:
-	addl	ebp,12345678h			// advance frac pointer
-	movb	[edi+1],bl				// write second pixel
-	andl edx,4095				// finish calculation for fourth pixel
-	movb	al,[esi+ecx]			// get third pixel
-	addl	edi,2					// advance to third pixel destination
-	movb	bl,[esi+edx]			// get fourth pixel
-	decl	[loopcount]				// done with loop?
-	movb	al,[eax]				// color translate third pixel
-	movb	bl,[ebx]				// color translate fourth pixel
+	add	ebp, 12345678h			; advance frac pointer
+	mov	[edi+1], bl				; write second pixel
+	and edx, 4095				; finish calculation for fourth pixel
+	mov	al, [esi+ecx]			; get third pixel
+	add	edi, 2					; advance to third pixel destination
+	mov	bl, [esi+edx]			; get fourth pixel
+	dec	DWORD PTR [loopcount]	; done with loop?
+	mov	al, [eax]				; color translate third pixel
+	mov	bl, [ebx]				; color translate fourth pixel
 	jnz	hdoubleloop
 
-// check for final pixel
+; check for final pixel
 hchecklast:
-	testl	[pixelcount],1
-	jz	hdone
-	movb	[edi],al				// write final pixel
+	test DWORD PTR [pixelcount], 1
+	jz hdone
+	movb [edi], al				; write final pixel
 	
 hdone:
-	popad
+	popa
 	ret
 
 
 
 
-//====================================================
-// fpfunc.S  as of January 10th, 1997 (parts)
+;====================================================
+; fpfunc.S  as of January 10th, 1997 (parts)
 
 #ifdef i386
 
@@ -257,26 +265,25 @@ hdone:
 	.align 4
 .globl _FixedMul
 _FixedMul:	
-	pushl %ebp
-	movl %esp,%ebp
-	movl 8(%ebp),%eax
-	imull 12(%ebp)
-	shrdl $16,%edx,%eax
-	popl %ebp
+	push ebp
+	mov ebp, esp
+	mov eax, [ebp+8]
+	imul [ebp+12]
+	shrd eax, edx, 16
+	pop ebp
 	ret
-
 
 	.align 4
 .globl _FixedDiv2
 _FixedDiv2:
-	pushl %ebp
-	movl %esp,%ebp
-	movl 8(%ebp),%eax
+	push ebp
+	mov ebp, esp
+	mov eax, [ebp+8]
 	cdq
-	shldl $16,%eax,%edx
-	sall	$16,%eax
-	idivl	12(%ebp)
-	popl %ebp
+	shld edx, eax, 16
+	sal eax, 16
+	idiv [ebp + 12]
+	pop ebp
 	ret
 
 #endif
